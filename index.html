@@ -329,7 +329,7 @@ table.wt tr:nth-child(even){background:rgba(255,255,255,.025);}
         <a class="btn ic-info" href="https://compassfp.monday.com/overviews/3445289" target="_blank"><div class="ico ic-g">📊</div><div class="btn-body"><div class="lbl">Reviews Dashboard</div><div class="dsc">Review pipeline &amp; forms</div></div><div class="arr">›</div></a>
         <a class="btn ic-info" href="https://claude.ai/chats" target="_blank"><div class="ico ic-p">🤖</div><div class="btn-body"><div class="lbl">Claude AI</div><div class="dsc">Open Claude for assistance</div></div><div class="arr">›</div></a>
         <a class="btn ic-info" href="https://parklaneadvicegroup-my.sharepoint.com" target="_blank"><div class="ico ic-s">☁️</div><div class="btn-body"><div class="lbl">OneDrive</div><div class="dsc">Client files and documents</div></div><div class="arr">›</div></a>
-        <a class="btn ic-action" href="#" onclick="emailWIP();return false;"><div class="ico ic-gold">📧</div><div class="btn-body"><div class="lbl">Email WIP Report</div><div class="dsc">Opens live WIP report in new tab</div></div><div class="arr">›</div></a>
+        <a class="btn ic-action" href="#" onclick="emailWIP(this);return false;"><div class="ico ic-gold">📧</div><div class="btn-body"><div class="lbl">Email WIP Report</div><div class="dsc">Opens live WIP report in new tab</div></div><div class="arr">›</div></a>
       </div>
     </div>
 
@@ -353,23 +353,38 @@ function collapseWip(){
   document.getElementById('gen-btn').textContent='Generate report';
 }
 
-async function emailWIP(){
-  const btn = event.target.closest('a');
-  const origHtml = btn.innerHTML;
-  btn.innerHTML = '<div class="ico ic-gold">⏳</div><div class="btn-body"><div class="lbl">Sending...</div><div class="dsc">Fetching live data</div></div>';
+async function emailWIP(btn){
+  if(!btn) return;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<div class="ico ic-gold">⏳</div><div class="btn-body"><div class="lbl">Loading...</div><div class="dsc">Fetching live data</div></div>';
   try {
-    const res = await fetch('https://compassfp-wip.jasonscottbell.workers.dev', {method:'POST', headers:{'Content-Type':'application/json'}});
-    if (!res.ok) throw new Error('Failed to fetch WIP data');
-    const data = await res.json();
-    // Open the HTML email in a new tab
-    const w = window.open('', '_blank');
-    w.document.write(data.html_email);
+    const res = await fetch('https://compassfp-wip.jasonscottbell.workers.dev',{method:'POST',headers:{'Content-Type':'application/json'}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const d = await res.json();
+    if(d.error) throw new Error(d.error);
+    const w = window.open('','_blank');
+    if(!w){alert('Please allow popups for this site then try again.');btn.innerHTML=orig;return;}
+    const ts = new Date(d.generated).toLocaleString('en-AU',{dateStyle:'medium',timeStyle:'short'});
+    function row(k,v,c){return '<div class="r"><span class="k">'+k+'</span><span class="v'+(c?' '+c:'')+'" >'+v+'</span></div>';}
+    let b='<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;background:#151e38;color:#f0eede;padding:24px;}.w{max-width:960px;margin:0 auto;}h1{color:#c9a040;font-size:22px;margin-bottom:4px;}.ts{color:#7a8aaa;font-size:12px;margin-bottom:20px;}.g{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}.c{background:#1c2847;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px;}h3{color:#c9a040;font-size:10px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;}.r{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05);}.r:last-child{border:none;}.k{color:#7a8aaa;}.v{font-weight:600;}.red{color:#f5a0ac;}.green{color:#6ec97a;}.sec{margin-bottom:20px;}.st{font-size:14px;font-weight:600;color:#f0eede;margin-bottom:8px;border-bottom:1px solid rgba(201,160,64,.3);padding-bottom:4px;}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}th{text-align:left;font-size:10px;color:#7a8aaa;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.08);}td{padding:5px 8px 5px 0;border-bottom:1px solid rgba(255,255,255,.04);color:#c0cce0;}tr:last-child td{border:none;}</style>';
+    b+='<div class="w"><h1>Compass FP — WIP Report</h1><div class="ts">Generated: '+ts+'</div><div class="g">';
+    b+='<div class="c"><h3>Leads &amp; Referrals</h3>'+row('Total',d.leads.total)+row('Active',d.leads.active)+row('Converted',d.leads.converted)+row('Conv. rate',d.leads.conversion_rate+'%')+row('Stale &gt;14d',d.leads.stale_leads.length||'None',d.leads.stale_leads.length>0?'red':'green')+'</div>';
+    b+='<div class="c"><h3>Onboarding</h3>'+row('Active',d.onboarding.total);
+    Object.entries(d.onboarding.stage_counts).forEach(function(e){b+=row(e[0],e[1]);});
+    b+=row('Stalled &gt;21d',d.onboarding.stalled.length||'None',d.onboarding.stalled.length>0?'red':'green')+'</div>';
+    b+='<div class="c"><h3>Clients &amp; Tasks</h3>'+row('Total clients',d.clients.total)+row('Gold',d.clients.gold)+row('Silver',d.clients.silver)+row('Bronze',d.clients.bronze)+row('Overdue tasks',d.tasks.overdue.length||'None',d.tasks.overdue.length>0?'red':'green')+'</div></div>';
+    if(d.leads.stale_leads.length>0){b+='<div class="sec"><div class="st">⚠ Stale Leads</div><table><thead><tr><th>Name</th><th>Stage</th><th>Age</th></tr></thead><tbody>';d.leads.stale_leads.forEach(function(l){b+='<tr><td>'+l.name+'</td><td>'+l.stage+'</td><td style="color:#f5a0ac">'+l.age_days+'d</td></tr>';});b+='</tbody></table></div>';}
+    if(d.onboarding.stalled.length>0){b+='<div class="sec"><div class="st">⚠ Stalled Onboardings</div><table><thead><tr><th>Client</th><th>Stage</th><th>Days</th></tr></thead><tbody>';d.onboarding.stalled.forEach(function(s){b+='<tr><td>'+s.name+'</td><td>'+s.stage+'</td><td style="color:#f5a0ac">'+s.age_days+'d</td></tr>';});b+='</tbody></table></div>';}
+    if(d.tasks.overdue.length>0){b+='<div class="sec"><div class="st">⚠ Overdue Tasks</div><table><thead><tr><th>Task</th><th>Overdue by</th></tr></thead><tbody>';d.tasks.overdue.forEach(function(t){b+='<tr><td>'+t.name+'</td><td style="color:#f5a0ac">'+t.days_overdue+'d</td></tr>';});b+='</tbody></table></div>';}
+    if(d.reviews.upcoming_triggers&&d.reviews.upcoming_triggers.length>0){b+='<div class="sec"><div class="st">Upcoming Review Triggers (60d)</div><table><thead><tr><th>Client</th><th>Days</th><th>Booked</th></tr></thead><tbody>';d.reviews.upcoming_triggers.forEach(function(r){b+='<tr><td>'+r.name+'</td><td>'+r.days_until+'d</td><td style="color:'+(r.booked?'#6ec97a':'#f5a0ac')+'">'+(r.booked?'✓ Yes':'✗ No')+'</td></tr>';});b+='</tbody></table></div>';}
+    b+='</div>';
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>WIP Report</title></head><body>'+b+'</body></html>');
     w.document.close();
-    btn.innerHTML = '<div class="ico ic-gold">✅</div><div class="btn-body"><div class="lbl">Report opened!</div><div class="dsc">Check new tab</div></div>';
-    setTimeout(()=>{btn.innerHTML=origHtml;},3000);
+    btn.innerHTML='<div class="ico ic-gold">✅</div><div class="btn-body"><div class="lbl">Report ready!</div><div class="dsc">Check new tab</div></div>';
+    setTimeout(function(){btn.innerHTML=orig;},3000);
   } catch(e) {
-    btn.innerHTML = '<div class="ico ic-gold">❌</div><div class="btn-body"><div class="lbl">Error</div><div class="dsc">Try again</div></div>';
-    setTimeout(()=>{btn.innerHTML=origHtml;},3000);
+    btn.innerHTML='<div class="ico ic-gold">❌</div><div class="btn-body"><div class="lbl">Error: '+e.message+'</div><div class="dsc">Try again</div></div>';
+    setTimeout(function(){btn.innerHTML=orig;},3000);
   }
 }
 
